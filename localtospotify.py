@@ -20,9 +20,13 @@ def main():
     songlist = ""
     auth = ''           #Authrorization code
     empty = 0           #Used to check for failed track transfers
+    listlen = 0         #Number of tracks
+    untagged = []       #Files without proper ID3 tagging
 
     directory = input('Music directory: ')
     existingstate = input('Exisiting or New Playlist: ')
+    while existingstate != 'New' and "new" and "N" and "n" and "Existing" and "existing" and "Exists" and "exists" and "E" and "e" and "Exist" and "exist":
+        existingstate = input('Exisiting or New Playlist: ')
     playlistname = input('Playlist name: ')
     
     result = authenticate()
@@ -30,10 +34,8 @@ def main():
 
     #Store file locations
     directoryencode = os.fsencode(directory)
-    for file in os.listdir(directoryencode):
-        filename = os.fsdecode(file)
-        if filename.endswith(".mp3"):
-            store.append(filename)
+    gettracks(directoryencode,store)
+
     printProgressBar(0, len(store), prefix = 'Progress:', suffix = 'Complete', length = 50)
 
     # Iterate through server output to retrive authentication code
@@ -77,10 +79,16 @@ def main():
         sys.stderr = result
 
         #Get search terms through tags
-        song = eyed3.core.load(directory + '/' + store[i])
+        song = eyed3.core.load(store[i])
         songname = song.tag.title
         album = song.tag.album
         artist = song.tag.artist
+        
+        #Skip files without tags
+        if songname == None or album == None:
+            untagged.append(store[i])
+            i += 1
+            continue
         
         sys.stderr = sys.__stderr__
 
@@ -95,19 +103,24 @@ def main():
 
         #If previous check failed replace album with artist
         if dictionary['tracks']['items'] == []:
+            if artist == None:
+                untagged.append(store[i])
+                i += 1
+                continue
             response = requests.get("https://api.spotify.com/v1/search?q="+ songname +"%20artist:"+ artist +"&type=track&limit=1", headers = {'Authorization' : auth})
             dictionary = response.json()
         
         #If both failed add track to unsuccesful array and continue
         if dictionary['tracks']['items'] == []:
             unsuccesful.append(urllib.parse.unquote(songname))
-            i+=1
+            i += 1
             empty = 1
             continue
 
         #Add retrived track id to list
         trackid = dictionary['tracks']['items'][0]['id']
         songlist = songlist + "spotify%3Atrack%3A" + trackid
+        listlen += 1
         
         i += 1
     i = 0
@@ -118,7 +131,7 @@ def main():
     userid = response['id']
 
     #If user chose new playlisy make api call to create playlist
-    if existingstate == "New":
+    if existingstate == "New" or "new" or "N" or "n":
         params = {
         "name": playlistname,
         "description": "Playlist transfer from local",
@@ -130,19 +143,53 @@ def main():
         playlistid= response['id']
 
     #Else api call to retrive existing playlists
-    else:
+    elif existingstate == "Existing" or "existing" or "Exists" or "exists" or "E" or "e" or "Exist" or "exist":
         response = requests.get("https://api.spotify.com/v1/me/playlists", headers = {'Authorization' : auth})
         response = response.json()
-
-
+        
         while response['items'][i]['name'] != playlistname:
+            if i + 1 == len(response['items']):
+                print("Playlist Not Found")
+                return
             i += 1
+
         playlistid = response['items'][i]['id']
 
-    #Api call to add songs to playlist
-    response = requests.request('post', "https://api.spotify.com/v1/playlists/"+ playlistid +"/tracks?uris=" + songlist, headers= {'Authorization' : auth}) 
-    
-    print("Unsuccesful tracks: "+ str(unsuccesful))
+    #Batch processing api calls for track uploafs
+    current = 0
+    trackbuffer = ''
+    j = 0
+    if listlen > 30:
+        while j < len(songlist):
+            if j + 1 == len(songlist):
+                trackbuffer = trackbuffer + songlist[j]
+                response = requests.request('post', "https://api.spotify.com/v1/playlists/"+ playlistid +"/tracks?uris=" + trackbuffer, headers= {'Authorization' : auth}) 
+                trackbuffer = ''
+            if songlist[j] == '%':
+                if songlist[j + 1] == '2' and songlist[j + 2] == 'C':
+                    current += 1
+                    if current == 30:
+                        response = requests.request('post', "https://api.spotify.com/v1/playlists/"+ playlistid +"/tracks?uris=" + trackbuffer, headers= {'Authorization' : auth}) 
+                        trackbuffer = ''
+                        current = 0
+                        j = j + 3
+            trackbuffer = trackbuffer + songlist[j]
+            j += 1
+    else:
+        #Api call to add songs to playlist
+        response = requests.request('post', "https://api.spotify.com/v1/playlists/"+ playlistid +"/tracks?uris=" + songlist, headers= {'Authorization' : auth}) 
+
+    print(str(len(unsuccesful)) + " Unsuccesful tracks: "+ str(unsuccesful))
+    print(str(len(untagged)) + " Untagged tracks: "+ str(untagged))
+
+#Recursive calls to search subdirectories
+def gettracks(directoryencode,store):
+    for entry in os.scandir(directoryencode):
+        filename = os.fsdecode(entry)
+        if entry.is_file() and filename.endswith(".mp3"):
+            store.append(filename)
+        elif entry.is_dir():
+            gettracks(entry.path,store)
 
 
 #Create temp server to handle URI redirect and retrive Auth Code
