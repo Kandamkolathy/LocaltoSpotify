@@ -24,9 +24,9 @@ def main():
     untagged = []       #Files without proper ID3 tagging
 
     directory = input('Music directory: ')
-    existingstate = input('Exisiting or New Playlist: ')
-    while existingstate != 'New' and "new" and "N" and "n" and "Existing" and "existing" and "Exists" and "exists" and "E" and "e" and "Exist" and "exist":
-        existingstate = input('Exisiting or New Playlist: ')
+    existingstate = input('Existing or New Playlist: ')
+    while existingstate != 'New' and existingstate != "new" and existingstate != "N" and existingstate != "n" and existingstate != "Existing" and existingstate != "existing" and existingstate != "Exists" and existingstate != "exists" and existingstate != "E" and existingstate != "e" and existingstate != "Exist" and existingstate != "exist":
+        existingstate = input('Existing or New Playlist: ')
     playlistname = input('Playlist name: ')
     
     result = authenticate()
