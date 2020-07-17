@@ -8,6 +8,7 @@ import sys
 from io import StringIO
 import base64
 import urllib.parse
+import re
 
 CLIENT_ID = "128418d86c274651af8cdc709df1c143"
 CLIENT_SECRET = "338ea240ab8d477ab9d799631406afb9"
@@ -25,7 +26,8 @@ def main():
 
     directory = input('Music directory: ')
     existingstate = input('Existing or New Playlist: ')
-    while existingstate != 'New' and existingstate != "new" and existingstate != "N" and existingstate != "n" and existingstate != "Existing" and existingstate != "existing" and existingstate != "Exists" and existingstate != "exists" and existingstate != "E" and existingstate != "e" and existingstate != "Exist" and existingstate != "exist":
+    pattern = re.compile("(^(e|E)(xist)?(s)?(ing)?|^(n|N)(ew|EW)?)")
+    while pattern.match(existingstate) == None:
         existingstate = input('Existing or New Playlist: ')
     playlistname = input('Playlist name: ')
     
@@ -34,7 +36,7 @@ def main():
 
     #Store file locations
     directoryencode = os.fsencode(directory)
-    gettracks(directoryencode,store)
+    getTracks(directoryencode,store)
 
     printProgressBar(0, len(store), prefix = 'Progress:', suffix = 'Complete', length = 50)
 
@@ -47,6 +49,8 @@ def main():
         auth = auth + result_string[i]
         i += 1
     i = 0
+
+
 
     #Send request to retrive access token using auth code
     params = {
@@ -87,6 +91,7 @@ def main():
         #Skip files without tags
         if songname == None or album == None:
             untagged.append(store[i])
+            empty += 1
             i += 1
             continue
         
@@ -131,7 +136,9 @@ def main():
     userid = response['id']
 
     #If user chose new playlisy make api call to create playlist
-    if existingstate == "New" or "new" or "N" or "n":
+    new_check = re.compile("^(n|N)(ew|EW)?")
+    exist_check = re.compile("^(e|E)(xist|XIST)?(s)?(ing|ING)?")
+    if new_check.match(existingstate) != None:
         params = {
         "name": playlistname,
         "description": "Playlist transfer from local",
@@ -143,7 +150,7 @@ def main():
         playlistid= response['id']
 
     #Else api call to retrive existing playlists
-    elif existingstate == "Existing" or "existing" or "Exists" or "exists" or "E" or "e" or "Exist" or "exist":
+    elif exist_check.match(existingstate) != None:
         response = requests.get("https://api.spotify.com/v1/me/playlists", headers = {'Authorization' : auth})
         response = response.json()
         
@@ -181,15 +188,23 @@ def main():
 
     print(str(len(unsuccesful)) + " Unsuccesful tracks: "+ str(unsuccesful))
     print(str(len(untagged)) + " Untagged tracks: "+ str(untagged))
+    if len(unsuccesful) > 0 or len(untagged) > 0 :
+        retry_check = re.compile("^(y|Y)(es|ES)?")
+        retry_attempt = input("Would you like to attempt to add individual failed tracks?: ")
+        if retry_check.match(retry_attempt) != None:
+            reattempt(playlistid, auth, unsuccesful)
+            reattempt(playlistid, auth, untagged)
+
+
 
 #Recursive calls to search subdirectories
-def gettracks(directoryencode,store):
+def getTracks(directoryencode,store):
     for entry in os.scandir(directoryencode):
         filename = os.fsdecode(entry)
         if entry.is_file() and filename.endswith(".mp3"):
             store.append(filename)
         elif entry.is_dir():
-            gettracks(entry.path,store)
+            getTracks(entry.path,store)
 
 
 #Create temp server to handle URI redirect and retrive Auth Code
@@ -209,6 +224,28 @@ def authenticate():
     wait_for_request()
     sys.stderr = old_stderr
     return result
+
+def reattempt(playlistid, auth, retry = [], *args):
+    i = 0
+    while i < len(retry):
+        retry[i] = re.sub('\(.+\)$', '', retry[i])
+        retry[i] = re.sub('^.+ -', '', retry[i])
+        retry[i] = os.path.splitext(retry[i])[0]
+        response = requests.get("https://api.spotify.com/v1/search?q=track:"+ retry[i] +"&type=track&limit=3", headers = {'Authorization' : auth})
+        dictionary = response.json()
+        if len(dictionary['tracks']['items']) != 0 :
+            z = 0
+            print(retry[i])
+            while z < len(dictionary['tracks']['items']) :
+                print(str(int(z) + 1) + ". " + dictionary['tracks']['items'][z]['name'] + ' - ' + dictionary['tracks']['items'][z]['artists'][0]['name'] + "\n")
+                z += 1
+            choice = input('Add which song - 0 for none: ')
+            while choice > z :
+                choice = input('Add which song - 0 for none: ') 
+            if choice != 0 :
+                track = re.sub('\:', '%3A', dictionary['tracks']['items'][int(choice) - 1]['uri'])
+                response = requests.request('post', "https://api.spotify.com/v1/playlists/"+ playlistid +"/tracks?uris=" + track, headers= {'Authorization' : auth}) 
+        i += 1
 
 def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, length = 100, fill = '█', printEnd = "\r"):
     """
