@@ -10,8 +10,8 @@ import base64
 import urllib.parse
 import re
 
-CLIENT_ID = "128418d86c274651af8cdc709df1c143"
-CLIENT_SECRET = "338ea240ab8d477ab9d799631406afb9"
+CLIENT_ID = "[CLIENT_ID]"
+CLIENT_SECRET = "[CLIENT_SECRET]"
 
 def main():
     unsuccesful = []    #Unsuccesful track transfers
